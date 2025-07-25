@@ -1,0 +1,12 @@
+[package]
+name = "carbon-http_server"
+version.workspace = true
+authors.workspace = true
+license.workspace = true
+rust-version.workspace = true
+edition.workspace = true
+
+[dependencies]
+ascii = "1.1.0"
+thiserror = "2.0.12"
+tokio = { version = "1.46.1", features = ["full"] }
