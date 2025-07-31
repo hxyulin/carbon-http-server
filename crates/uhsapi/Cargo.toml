@@ -1,5 +1,5 @@
 [package]
-name = "carbon-http_server"
+name = "uhsapi"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -7,6 +7,3 @@ rust-version.workspace = true
 edition.workspace = true
 
 [dependencies]
-uhsapi.workspace = true
-thiserror = "2.0.12"
-tokio = { version = "1.46.1", features = ["full"] }
