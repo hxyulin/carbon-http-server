@@ -1,7 +1,5 @@
 use std::{fmt, str::FromStr};
 
-use crate::http::InvalidHttpVersion;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAsciiError;
 

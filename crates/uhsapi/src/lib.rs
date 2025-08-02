@@ -5,5 +5,4 @@
 
 #![feature(bool_to_result)]
 
-pub mod http;
 pub mod ascii;
