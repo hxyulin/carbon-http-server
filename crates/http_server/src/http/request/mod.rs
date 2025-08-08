@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{net::SocketAddr, str::FromStr};
 
 use bytes::Bytes;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
@@ -13,9 +13,30 @@ use crate::http::{
 };
 
 #[derive(Debug, Clone)]
-pub struct HttpRequest {
-    req_line: RequestLine,
+pub struct ParsedRequest {
+    pub(crate) req_line: RequestLine,
+    pub(crate) headers: HeaderMap,
+}
+
+impl ParsedRequest {
+    pub fn to_request(self, remote: Option<SocketAddr>) -> Request {
+        Request {
+            method: self.req_line.method,
+            target: self.req_line.target,
+            version: self.req_line.version,
+            headers: self.headers,
+            remote,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Request {
+    method: Method,
+    target: RequestTarget,
+    version: HttpVersion,
     headers: HeaderMap,
+    remote: Option<SocketAddr>,
 }
 
 enum RequestParseState {
@@ -82,12 +103,13 @@ where
         // TODO: Timeout
         self.line_buf.clear();
         let n = self.reader.read_until(b'\n', &mut self.line_buf).await?;
-        if n == 0 {
+        if n == 0 || !self.line_buf.ends_with(b"\n") {
             return Err(RequestParseError::UnexpectedEof);
         }
-        println!("{}", n);
-        // We know it ends with \r\n, just truncate
-        self.line_buf.truncate(self.line_buf.len() - 2);
+        self.line_buf.truncate(self.line_buf.len() - 1);
+        if self.line_buf.ends_with(b"\r") {
+            self.line_buf.truncate(self.line_buf.len() - 1);
+        }
         Ok(self.line_buf.as_slice())
     }
 
@@ -151,7 +173,7 @@ where
         Ok(header_map)
     }
 
-    pub async fn parse(input: T) -> Result<HttpRequest, RequestParseError> {
+    pub async fn parse(input: T) -> Result<ParsedRequest, RequestParseError> {
         let mut parser = Self {
             reader: BufReader::new(input),
             line_buf: Vec::new(),
@@ -160,7 +182,7 @@ where
         let req_line = parser.parse_req_line().await?;
         let headers = parser.parse_headers().await?;
 
-        Ok(HttpRequest { req_line, headers })
+        Ok(ParsedRequest { req_line, headers })
     }
 }
 

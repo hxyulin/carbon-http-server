@@ -85,9 +85,17 @@ impl AsciiStr {
         Self::from_ascii(s.as_bytes())
     }
 
+    pub const unsafe fn from_str_unchecked(s: &str) -> &AsciiStr {
+        unsafe { Self::from_ascii_unchecked(s.as_bytes()) }
+    }
+
     pub fn from_ascii(bytes: &[u8]) -> Result<&AsciiStr, InvalidAsciiError> {
         bytes.iter().all(|&b| b < 0x80).ok_or(InvalidAsciiError)?;
-        Ok(unsafe { std::mem::transmute(bytes) })
+        Ok(unsafe { Self::from_ascii_unchecked(bytes) })
+    }
+
+    pub const unsafe fn from_ascii_unchecked(bytes: &[u8]) -> &AsciiStr {
+        unsafe { std::mem::transmute(bytes) }
     }
 
     pub fn to_ascii_string(&self) -> AsciiString {

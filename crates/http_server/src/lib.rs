@@ -4,6 +4,7 @@
 
 pub mod http;
 pub mod sync;
+pub mod service;
 
 use std::{net::SocketAddr, sync::Arc};
 
@@ -82,11 +83,13 @@ impl HttpServerInternal {
         stream: &mut TcpStream,
         addr: SocketAddr,
     ) -> HttpServerResult<()> {
-        let req = HttpRequestParser::parse(&mut *stream).await?;
-        println!("req = {:#?}", req);
+        let req = HttpRequestParser::parse(&mut *stream)
+            .await?
+            .to_request(Some(addr));
+        println!("Request: {:#?}", req);
 
         let response = b"\
-HTTP/1.1 200 OK\r\n\
+HTTP/1.1 404 Not Found\r\n\
 Content-Type: text/plain\r\n\
 Content-Length: 13\r\n\
 Connection: close\r\n\
