@@ -18,12 +18,18 @@ impl HeaderMap {
         }
     }
 
+    pub fn with_capacity(size: usize) -> Self {
+        Self {
+            map: HashMap::with_capacity(size),
+        }
+    }
+
     pub fn entry(&mut self, name: HeaderName) -> &mut HeaderValue {
         self.map.entry(name).or_insert(HeaderValue::default())
     }
 
     pub fn get_header<T: HeaderField>(&self) -> Result<Option<T::Output>, HeaderParseError> {
-        let val = match self.map.get(&HeaderName::from(T::IDENT)) {
+        let val = match self.map.get(&HeaderName::from_lower(T::IDENT)) {
             None => return Ok(None),
             Some(val) => val,
         };

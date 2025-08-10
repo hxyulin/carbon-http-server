@@ -30,19 +30,24 @@ impl fmt::Display for AsciiString {
     }
 }
 
+pub fn bytes_are_ascii(bytes: &[u8]) -> Result<(), InvalidAsciiError> {
+    bytes.iter().all(|&b| b < 0x80).ok_or(InvalidAsciiError)
+}
+
 impl AsciiString {
+
     pub fn from_str(s: &str) -> Result<AsciiString, InvalidAsciiError> {
         Self::from_ascii(s.as_bytes())
     }
 
     pub fn from_ascii(bytes: &[u8]) -> Result<AsciiString, InvalidAsciiError> {
-        bytes.iter().all(|&b| b < 0x80).ok_or(InvalidAsciiError)?;
+        bytes_are_ascii(bytes)?;
         // SAFETY: We checked that all bytes are valid
         Ok(unsafe { Self::from_ascii_unchecked(bytes) })
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Result<AsciiString, InvalidAsciiError> {
-        bytes.iter().all(|&b| b < 0x80).ok_or(InvalidAsciiError)?;
+        bytes_are_ascii(&bytes)?;
         // SAFETY: We checked that all bytes are valid
         Ok(unsafe { Self::from_bytes_unchecked(bytes) })
     }
@@ -106,6 +111,10 @@ impl AsciiStr {
     pub fn as_str(&self) -> &str {
         // SAFETY: valid ascii is valid UTF-8
         unsafe { std::str::from_utf8_unchecked(&self.0) }
+    }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 }
 

@@ -1,4 +1,11 @@
-use crate::http::{request::Request, response::Response};
+pub trait Service<Request>: Send + Sync + 'static {
+    type Error;
+    type Response;
+    type Future;
 
-pub trait Service: Send + Sync + 'static {
+    fn poll_ready(&self);
+    fn call(
+        &self,
+        req: Request,
+    ) -> impl Future<Output = Result<Self::Response, Self::Error>> + Send;
 }

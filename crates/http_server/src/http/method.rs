@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display};
 
-use uhsapi::ascii::{AsciiStr, AsciiString};
+use bytes::Bytes;
+use uhsapi::ascii::{AsciiStr, AsciiString, InvalidAsciiError};
 
 /// An HTTP Method
 /// SPEC: Defined in RFC9112 3.1
@@ -19,12 +20,23 @@ impl Debug for Method {
     }
 }
 
-impl From<&AsciiStr> for Method
-{
+impl TryFrom<Bytes> for Method {
+    type Error = InvalidAsciiError;
+
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        let ascii_str = AsciiStr::from_ascii(&value)?;
+        Ok(match Builtin::try_from(ascii_str) {
+            Ok(builtin) => Method(Repr::Builtin(builtin)),
+            Err(_) => Method(Repr::Custom(value)),
+        })
+    }
+}
+
+impl From<&AsciiStr> for Method {
     fn from(value: &AsciiStr) -> Self {
         match Builtin::try_from(value) {
             Ok(builtin) => Method(Repr::Builtin(builtin)),
-            Err(_) => Method(Repr::Custom(value.to_ascii_string())),
+            Err(_) => Method(Repr::Custom(Bytes::copy_from_slice(value.as_bytes()))),
         }
     }
 }
@@ -40,28 +52,30 @@ impl Method {
     pub const TRACE: Self = Self(Repr::Builtin(Builtin::TRACE));
     pub const HEAD: Self = Self(Repr::Builtin(Builtin::HEAD));
 
-    pub const fn custom(str: AsciiString) -> Self {
-        Self(Repr::Custom(str))
+    pub const fn custom(bytes: Bytes) -> Self {
+        Self(Repr::Custom(bytes))
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Repr {
     Builtin(Builtin),
-    Custom(AsciiString),
+    Custom(Bytes),
 }
 
 impl Display for Repr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Builtin(builtin) => std::fmt::Display::fmt(builtin, f),
-            Self::Custom(custom) => std::fmt::Display::fmt(custom, f),
+            Self::Custom(custom) => {
+                std::fmt::Display::fmt(unsafe { std::str::from_utf8_unchecked(custom) }, f)
+            }
         }
     }
 }
 
 // It should be possible for rust to optimize it to 24 bits, we check that it is the case
-static_assertions::assert_eq_size!(Repr, AsciiString);
+static_assertions::assert_eq_size!(Repr, Bytes);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Builtin {

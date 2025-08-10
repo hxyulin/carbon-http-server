@@ -1,6 +1,7 @@
-use std::str::FromStr;
+use std::{num::NonZeroUsize, str::FromStr};
 
-use crate::http::method::Method;
+use bytes::Bytes;
+use uhsapi::ascii::{AsciiStr, InvalidAsciiError};
 
 // TODO: This is not safe or recommended, replace each of these fields with URI, URL, or other
 // structs
@@ -13,6 +14,47 @@ pub enum RequestTarget {
     /// An Authority form using URI-host:port format
     Authority(String),
     Asterisk,
+}
+
+impl RequestTarget {
+    pub fn as_str(&self) -> &str {
+        todo!()
+    }
+}
+
+pub struct OriginForm {
+    data: Bytes,
+    /// The starting index of the query (index of question mark)
+    /// We can use a NonZeroUsize here because OriginForm starts with a leading slash,
+    /// so the question mark can never be at index 0
+    query: Option<NonZeroUsize>,
+}
+
+impl OriginForm {
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, InvalidAsciiError> {
+        // Check to make sure it is valid ascii
+        _ = AsciiStr::from_ascii(bytes)?;
+        if *bytes.get(0).unwrap() != b'/' {
+            todo!()
+        }
+        // SAFETY: We checked that byte position 0 is a slash, so it can never be a question mark
+        let query = bytes
+            .iter()
+            .position(|b| *b == b'?')
+            .map(|idx| unsafe { NonZeroUsize::new_unchecked(idx) });
+        Ok(Self {
+            data: Bytes::copy_from_slice(bytes),
+            query,
+        })
+    }
+}
+
+impl OriginForm {
+    /// Converts to a string, this function does not decode the string
+    pub fn as_str(&self) -> &str {
+        // SAFETY: This is guaranteed to be ASCII, and should be checked
+        unsafe { std::str::from_utf8_unchecked(&self.data) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -37,58 +79,4 @@ impl std::fmt::Display for RequestTarget {
             _ => unimplemented!(),
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HttpVersion {
-    pub major: u8,
-    pub minor: u8,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ParseHttpVersionError;
-
-impl std::fmt::Display for ParseHttpVersionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("invalid HTTP version")
-    }
-}
-
-impl std::error::Error for ParseHttpVersionError {}
-
-impl FromStr for HttpVersion {
-    type Err = ParseHttpVersionError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if let Some(s) = s.strip_prefix("HTTP/") {
-            let mut parts = s.splitn(2, '.');
-            let major = parts
-                .next()
-                .ok_or(ParseHttpVersionError)?
-                .parse::<u8>()
-                .map_err(|_| ParseHttpVersionError)?;
-            let minor = parts
-                .next()
-                .ok_or(ParseHttpVersionError)?
-                .parse::<u8>()
-                .map_err(|_| ParseHttpVersionError)?;
-            Ok(HttpVersion { major, minor })
-        } else {
-            Err(ParseHttpVersionError)
-        }
-    }
-}
-
-impl std::fmt::Display for HttpVersion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP/{}.{}", self.major, self.minor)
-    }
-}
-
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RequestLine {
-    pub method: Method,
-    pub target: RequestTarget,
-    pub version: HttpVersion,
 }

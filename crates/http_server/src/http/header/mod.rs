@@ -11,11 +11,26 @@ use crate::http::uri::{MalformedUriError, UriHost, UriPort};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct HeaderName(Repr);
 
-impl From<&AsciiStr> for HeaderName {
-    fn from(value: &AsciiStr) -> Self {
-        match Builtin::from_str(&value.as_str().to_ascii_lowercase()) {
+impl TryFrom<Bytes> for HeaderName {
+    type Error = InvalidAsciiError;
+
+    fn try_from(value: Bytes) -> Result<Self, Self::Error> {
+        let str = AsciiStr::from_ascii(&value)?;
+
+        Ok(match Builtin::from_str(str.as_str()) {
             Ok(builtin) => Self(Repr::Builtin(builtin)),
-            Err(_) => Self(Repr::Custom(Custom::new(value.to_ascii_string()))),
+            Err(_) => Self(Repr::Custom(Custom::new(value))),
+        })
+    }
+}
+
+impl HeaderName {
+    fn from_lower(value: &AsciiStr) -> Self {
+        match Builtin::from_str(value.as_str()) {
+            Ok(builtin) => Self(Repr::Builtin(builtin)),
+            Err(_) => Self(Repr::Custom(Custom::new(Bytes::copy_from_slice(
+                value.as_bytes(),
+            )))),
         }
     }
 }
@@ -28,18 +43,19 @@ enum Repr {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Custom {
-    value: AsciiString,
+    value: Bytes,
 }
 
 impl Custom {
-    pub fn new(value: AsciiString) -> Self {
+    pub fn new(value: Bytes) -> Self {
         Self { value }
     }
 }
 
 impl Display for Custom {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        Display::fmt(&self.value, f)
+        // SAFETY: It should be checked ASCII before being stored
+        Display::fmt(unsafe { std::str::from_utf8_unchecked(&self.value) }, f)
     }
 }
 
@@ -73,7 +89,17 @@ impl Display for Builtin {
 impl FromStr for Builtin {
     type Err = ();
 
+    /// Should be called with a string that is valid ascii
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut buf = [0u8; 20];
+        if s.len() > 20 {
+            return Err(());
+        }
+        for (idx, c) in s.as_bytes().iter().enumerate() {
+            buf[idx] = c.to_ascii_lowercase();
+        }
+        let s = unsafe { std::str::from_raw_parts(buf.as_ptr(), s.len()) };
+
         Ok(match s {
             "host" => Self::Host,
             "content-length" => Self::ContentLength,
@@ -177,4 +203,28 @@ impl FromHeaderValue for HostWithPort {
     }
 }
 
+impl FromHeaderValue for u64 {
+    fn from_header_value(bytes: &Bytes) -> Result<Self, HeaderParseError> {
+        let s = std::str::from_utf8(bytes).map_err(|_| InvalidAsciiError)?;
+        Ok(s.parse()?)
+    }
+}
+
+pub enum EncodingKind {
+
+}
+
+impl FromHeaderValue for EncodingKind {
+    fn from_header_value(bytes: &Bytes) -> Result<Self, HeaderParseError> {
+        todo!()
+    }
+}
+
 header_struct!(Host, b"host", HostWithPort);
+header_struct!(ContentLength, b"content-length", u64);
+header_struct!(TransferEncoding, b"transfer-encoding", EncodingKind);
+
+#[cfg(test)]
+mod tests {
+
+}
