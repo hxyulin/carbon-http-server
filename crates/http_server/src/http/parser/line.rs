@@ -12,11 +12,9 @@ use crate::http::{
     response::Response,
 };
 
-pub enum StartLine {
-    Request(RequestLine),
-    Response(ResponseLine),
-}
-
+/// The Request Line for a HTTP Message
+/// SPEC: RFC 9112 - 3. Request Line
+/// ABNF: request-line = method SP request-target SP HTTP-version
 #[derive(Debug)]
 pub struct RequestLine {
     pub method: Range<usize>,
@@ -50,7 +48,12 @@ impl LineParse for RequestLine {
                 .map_err(|_| make_err(&line))?;
 
         if !line.is_empty() {
-            todo!("handle err")
+            return Err(HttpParseError {
+                kind: ParseErrorKind::InvalidVersion,
+                location: Location::StartLine,
+                offset: line.line_start,
+                line: None,
+            });
         }
 
         Ok(Self {
@@ -72,6 +75,8 @@ impl LineParse for RequestLine {
     }
 }
 
+/// The Response Line for a HTTP Message
+/// ABNF: 
 #[derive(Debug)]
 pub struct ResponseLine {
     pub version: HttpVersion,

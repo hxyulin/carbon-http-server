@@ -13,3 +13,5 @@ edition = "2024"
 [workspace.dependencies]
 carbon_http_server = { path = "crates/http_server", version = "0.0.1" }
 uhsapi = { path = "crates/uhsapi", version = "0.0.1" }
+
+log = "0.4.27"

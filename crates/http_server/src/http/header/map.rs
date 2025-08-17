@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map};
 
-use bytes::BytesMut;
+use bytes::Bytes;
 
-use crate::http::header::{HeaderField, HeaderParseError};
+use crate::http::header::{Builtin, HeaderField, HeaderParseError};
 
 use super::{HeaderName, HeaderValue};
 
@@ -29,15 +29,18 @@ impl HeaderMap {
     }
 
     pub fn get_header<T: HeaderField>(&self) -> Result<Option<T::Output>, HeaderParseError> {
-        let val = match self.map.get(&HeaderName::from_lower(T::IDENT)) {
+        let name = HeaderName::builtin(
+            Builtin::from_bytes(&Bytes::from_static(T::IDENT.as_bytes()))
+                .expect("invalid header name"),
+        );
+        let val = match self.map.get(&name) {
             None => return Ok(None),
             Some(val) => val,
         };
-        // TODO: Check header behaviour
-        let mut bytes = BytesMut::new();
-        for val in val.as_slice() {
-            bytes.extend_from_slice(val);
-        }
-        T::parse(&bytes.freeze()).map(Some)
+        T::parse(val).map(Some)
+    }
+
+    pub fn iter(&self) -> hash_map::Iter<'_, HeaderName, HeaderValue> {
+        self.map.iter()
     }
 }

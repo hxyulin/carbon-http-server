@@ -1,9 +1,15 @@
 use std::str::FromStr;
 
+/// HTTP Version
+/// SPEC: RFC 9110 - 2.5. Protocol Version
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HttpVersion {
     pub major: u8,
     pub minor: u8,
+}
+
+impl HttpVersion {
+    pub const HTTP_1_1: Self = Self { major: 1, minor: 1 };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,4 +51,3 @@ impl std::fmt::Display for HttpVersion {
         write!(f, "HTTP/{}.{}", self.major, self.minor)
     }
 }
-

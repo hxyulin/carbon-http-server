@@ -10,7 +10,7 @@ mod version;
 pub use version::{HttpVersion, ParseHttpVersionError};
 
 #[derive(Debug, Clone)]
-enum Body {
+pub enum Body {
     None,
     Full(bytes::Bytes),
 }

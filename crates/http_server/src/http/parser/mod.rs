@@ -1,11 +1,10 @@
 use std::{
-    error::Error,
     fmt::Debug,
     ops::{Index, Range, RangeInclusive},
 };
 
 use crate::http::{
-    Body, HttpVersion,
+    Body,
     header::{ContentLength, HeaderMap, HeaderName, TransferEncoding},
     request::Request,
     response::Response,
@@ -17,7 +16,7 @@ use bytes::{Bytes, BytesMut};
 pub use error::*;
 use memchr::{memchr, memchr2};
 use smallvec::SmallVec;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 fn is_tchar(b: u8) -> bool {
     (b'A'..=b'Z').contains(&b)
@@ -187,12 +186,11 @@ struct HeaderIx {
     value: Range<usize>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParseState {
     Line,
     Headers,
     Body,
-    Done,
 }
 
 impl Into<Location> for ParseState {
@@ -201,7 +199,6 @@ impl Into<Location> for ParseState {
             Self::Line => Location::StartLine,
             Self::Headers => Location::Headers,
             Self::Body => Location::Body,
-            Self::Done => unreachable!(),
         }
     }
 }
@@ -220,7 +217,8 @@ where
         // Parses an entire HTTP Request Message
         // SPEC: RFC 9112 - 2.1 Message Format
         // ABNF:
-        //  HTTP-request-message = request-line CRLF *( field-line CRLF ) CRLF [ message-body ]
+        //  HTTP-message = start-line CRLF *( field-line CRLF ) CRLF [ message-body ]
+        //  start-line = request-line | status-line
 
         let mut s_line: Option<M> = None;
         let mut headers = SmallVec::<[HeaderIx; 32]>::new();
@@ -268,44 +266,55 @@ where
                         let value = line.trim();
                         headers.push(HeaderIx { name, value });
                     }
-                    ParseState::Body | ParseState::Done => unreachable!(),
+                    ParseState::Body => unreachable!(),
                 }
 
                 continue;
             }
 
             if 0 == self.reader.read().await.unwrap() {
-                todo!("err")
+                return Err(HttpParseError {
+                    kind: ParseErrorKind::IncompleteMessage,
+                    location: state.into(),
+                    offset: self.reader.cursor,
+                    line: Some(line_cnt),
+                });
             }
         }
 
         let header_bytes = self.reader.buf.split_to(self.reader.cursor).freeze();
+        // Reset cursor
+        self.reader.cursor = 0;
         let mut header_map = HeaderMap::with_capacity(headers.len());
         for header in headers {
             let name = header_bytes.slice(header.name);
             let value = header_bytes.slice(header.value);
-            let name = HeaderName::try_from(name).map_err(|_| todo!())?;
+            let name = HeaderName::try_from(&name).map_err(|_| todo!())?;
             header_map.entry(name).push(value);
         }
-        let mut body = Body::None;
 
         // Now we can parse body
-        if let Some(encoding) = header_map.get_header::<TransferEncoding>().unwrap() {
+        assert_eq!(state, ParseState::Body);
+        let body = if let Some(encoding) = header_map.get_header::<TransferEncoding>().unwrap() {
+            todo!()
         } else if let Some(cl) = header_map.get_header::<ContentLength>().unwrap() {
             // TODO: Handle message larger than 4GB on 32bit maybe?
             let cl = cl as usize;
-            // FIXME: Can I do this without cloning, and just replace it
-            let mut body_buf = self.reader.buf.clone();
-            self.reader.buf = BytesMut::new();
+            // Remove all header chunks
+            let mut body_buf = self.reader.buf.split_to(cl.min(self.reader.buf.len()));
             let old_len = body_buf.len();
+            // We can safety resize, because the size is at most cl
             body_buf.resize(cl, 0);
             self.reader
                 .inner
                 .read_exact(&mut body_buf[old_len..cl])
                 .await
                 .unwrap();
-            body = Body::Full(body_buf.freeze());
-        }
+            Body::Full(body_buf.freeze())
+        } else {
+            // Everything else is part of the next request
+            Body::None
+        };
 
         Ok(M::to_output(
             header_bytes,
@@ -324,23 +333,43 @@ where
     }
 }
 
-pub struct Sender {}
+pub struct Sender<WRITER: AsyncWriteExt + Unpin> {
+    writer: WRITER,
+}
 
-impl Sender {
-    async fn send_message<M: LineSend>(
-        &mut self,
-        message: M,
-        headers: HeaderMap,
-    ) -> HttpParseResult<()> {
+impl<WRITER> Sender<WRITER>
+where
+    WRITER: AsyncWriteExt + Unpin,
+{
+    pub const fn new(writer: WRITER) -> Self {
+        Self { writer }
+    }
+
+    async fn send_headers(&mut self, headers: HeaderMap) -> std::io::Result<()> {
         todo!()
     }
 
-    pub async fn send_request(&mut self, request: Request) -> HttpParseResult<()> {
+    pub async fn send_request(&mut self, request: Request) -> std::io::Result<()> {
         todo!()
     }
 
-    pub async fn send_response(&mut self, response: Response) -> HttpParseResult<()> {
-        todo!()
+    pub async fn send_response(&mut self, response: Response) -> std::io::Result<()> {
+        use std::fmt::Write;
+        let mut buf = BytesMut::new();
+        write!(buf, "{} {}\r\n", response.version, response.status).unwrap();
+        for (name, value) in response.headers.iter() {
+            write!(buf, "{}: ", name).unwrap();
+            buf.extend_from_slice(&value.collect());
+            write!(buf, "\r\n");
+        }
+        write!(buf, "\r\n").unwrap();
+        match response.body {
+            Body::None => {}
+            Body::Full(bytes) => buf.extend_from_slice(&bytes),
+        }
+        self.writer.write_all(&buf).await?;
+        self.writer.flush().await?;
+        Ok(())
     }
 }
 

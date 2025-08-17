@@ -1,4 +1,4 @@
-use std::{fmt, str::FromStr};
+use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidAsciiError;
@@ -35,7 +35,6 @@ pub fn bytes_are_ascii(bytes: &[u8]) -> Result<(), InvalidAsciiError> {
 }
 
 impl AsciiString {
-
     pub fn from_str(s: &str) -> Result<AsciiString, InvalidAsciiError> {
         Self::from_ascii(s.as_bytes())
     }

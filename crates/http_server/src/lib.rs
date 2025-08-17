@@ -9,13 +9,14 @@ pub mod sync;
 use std::{net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
 use crate::http::{
-    parser::{HttpParseError, Parser},
+    HttpVersion,
+    header::{Connection, ConnectionType},
+    parser::{HttpParseError, Parser, Sender},
     request::Request,
+    response::{Response, ResponseBuilder, StatusCode},
 };
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpSocket, TcpStream},
-};
+use bytes::Bytes;
+use tokio::{io::AsyncWriteExt, net::{TcpSocket, TcpStream}};
 
 #[derive(Debug, Clone)]
 pub struct HttpServerConfig {
@@ -88,8 +89,17 @@ impl<R: Router> HttpServer<R> {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum RouterError {
+    #[error(transparent)]
+    Generic(#[from] Box<dyn std::error::Error + Send + Sync>),
+}
+
 pub trait Router: Send + Sync + 'static {
-    fn route(&self, stream: &mut TcpStream, request: Request) -> impl Future<Output = ()> + Send;
+    fn route(
+        &self,
+        request: &Request,
+    ) -> impl Future<Output = Result<Response, RouterError>> + Send;
 }
 
 pub(crate) struct HttpServerInternal<R: Router> {
@@ -125,26 +135,72 @@ impl<R: Router> HttpServerInternal<R> {
         }
     }
 
-    async fn handle_connection(sel: Arc<Self>, mut stream: TcpStream, addr: SocketAddr) {
-        if let Err(err) = sel.handle_connection_internal(&mut stream, addr).await {
-            eprintln!("error: {err}");
-
-            let err = stream
-                .write_all(b"HTTP/1.1 500 Internal Server Error")
-                .await;
-            if let Err(err) = err {
-                eprintln!("failed to write error to server: {err}");
-            }
+    async fn handle_connection(sel: Arc<Self>, stream: TcpStream, addr: SocketAddr) {
+        if let Err(err) = sel.handle_connection_internal(stream, addr).await {
+            log::error!("server error: {}", err);
         }
     }
 
     async fn handle_connection_internal(
         &self,
-        stream: &mut TcpStream,
+        mut stream: TcpStream,
         addr: SocketAddr,
     ) -> HttpServerResult<()> {
-        let req = Parser::new(stream).parse_request().await;
-        dbg!(req);
-        Ok(())
+        let (mut read_stream, mut write_stream) = stream.split();
+        let mut parser = Parser::new(&mut read_stream);
+        let mut sender = Sender::new(&mut write_stream);
+
+        loop {
+            let req = match parser.parse_request().await {
+                Ok(mut req) => {
+                    req.remote = Some(addr);
+                    req
+                }
+                Err(err) => {
+                    log::error!("failed to parse request: {}", err);
+                    let res = ResponseBuilder::new(
+                        HttpVersion::HTTP_1_1,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    )
+                    .set_header::<Connection>(ConnectionType::Close)
+                    .build();
+                    sender.send_response(res).await?;
+                    return Ok(());
+                }
+            };
+            let close_connection = matches!(
+                req.headers.get_header::<Connection>().unwrap(),
+                Some(ConnectionType::Close)
+            );
+            let res = self.router.route(&req).await;
+            match res {
+                Ok(res) => {
+                    let close_connection = matches!(
+                        res.headers.get_header::<Connection>().unwrap(),
+                        Some(ConnectionType::Close)
+                    );
+                    log::debug!("sending response = {:#?}", res);
+                    sender.send_response(res).await?;
+                    if close_connection {
+                        return Ok(());
+                    }
+                }
+                Err(err) => {
+                    let res = ResponseBuilder::from_req(&req, StatusCode::INTERNAL_SERVER_ERROR)
+                        .set_header::<Connection>(ConnectionType::Close)
+                        .build();
+                    sender.send_response(res).await?;
+                    log::error!("router error: {}", err)
+                }
+            }
+
+            if close_connection {
+                return Ok(());
+            }
+        }
     }
+}
+
+pub fn init_logger() {
+    env_logger::init();
 }

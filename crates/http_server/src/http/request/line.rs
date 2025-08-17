@@ -1,4 +1,4 @@
-use std::{num::NonZeroUsize, str::FromStr};
+use std::num::NonZeroUsize;
 
 use bytes::Bytes;
 use uhsapi::ascii::{AsciiStr, InvalidAsciiError};
@@ -8,7 +8,7 @@ use uhsapi::ascii::{AsciiStr, InvalidAsciiError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RequestTarget {
     /// An Origin request as an URI
-    Origin(String),
+    Origin(OriginForm),
     /// An abslute URL
     Absolute(String),
     /// An Authority form using URI-host:port format
@@ -18,10 +18,17 @@ pub enum RequestTarget {
 
 impl RequestTarget {
     pub fn as_str(&self) -> &str {
-        todo!()
+        // FIXME: This is not only a security vulnerability, but also it doesn't URL decode
+        // We should provide the users a Heap Allocated Decoded string / URI components
+        match self {
+            Self::Asterisk => "*",
+            Self::Origin(origin) => origin.as_str(),
+            _ => unimplemented!(),
+        }
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OriginForm {
     data: Bytes,
     /// The starting index of the query (index of question mark)
@@ -31,7 +38,7 @@ pub struct OriginForm {
 }
 
 impl OriginForm {
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, InvalidAsciiError> {
+    pub fn from_bytes(bytes: &Bytes) -> Result<Self, InvalidAsciiError> {
         // Check to make sure it is valid ascii
         _ = AsciiStr::from_ascii(bytes)?;
         if *bytes.get(0).unwrap() != b'/' {
@@ -43,7 +50,7 @@ impl OriginForm {
             .position(|b| *b == b'?')
             .map(|idx| unsafe { NonZeroUsize::new_unchecked(idx) });
         Ok(Self {
-            data: Bytes::copy_from_slice(bytes),
+            data: bytes.clone(),
             query,
         })
     }
@@ -60,14 +67,26 @@ impl OriginForm {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RequestTargetParseError;
 
-impl TryFrom<&[u8]> for RequestTarget {
+impl TryFrom<&Bytes> for RequestTarget {
     type Error = RequestTargetParseError;
 
-    fn try_from(s: &[u8]) -> Result<Self, Self::Error> {
-        Ok(match s {
-            b"*" => Self::Asterisk,
-            other => Self::Origin(std::str::from_utf8(other).unwrap().to_string()),
-        })
+    fn try_from(s: &Bytes) -> Result<Self, Self::Error> {
+        if let Some(fc) = s.get(0).copied() {
+            match fc {
+                b'*' => {
+                    if s.len() > 1 {
+                        todo!("handle error")
+                    }
+                    return Ok(Self::Asterisk);
+                }
+                b'/' => return Ok(Self::Origin(OriginForm::from_bytes(s).unwrap())),
+                _ => {
+                    // so it can either be absolute path or authority-form
+                    todo!()
+                }
+            }
+        }
+        todo!("error, cannot be empty")
     }
 }
 

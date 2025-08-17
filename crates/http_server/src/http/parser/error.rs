@@ -8,6 +8,17 @@ pub enum Location {
     Trailers,
 }
 
+impl Display for Location {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::StartLine => "start line",
+            Self::Headers => "headers",
+            Self::Body => "body",
+            Self::Trailers => "trailers",
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum LimitKind {
     RequestLineBytes,
@@ -26,12 +37,15 @@ pub enum LimitKind {
 pub enum ParseErrorKind {
     // Syntax/tokenization
     InvalidMethod,
-    InvalidTarget,             // origin-form etc.
+    InvalidTarget, // origin-form etc.
     InvalidVersion,
-    MalformedHeaderLine,       // no colon / bad OWS
-    InvalidHeaderName,         // non-tchar
-    InvalidHeaderValue,        // illegal bytes (bare CR/LF)
-    UnexpectedByte { expected: u8, found: u8 },
+    MalformedHeaderLine, // no colon / bad OWS
+    InvalidHeaderName,   // non-tchar
+    InvalidHeaderValue,  // illegal bytes (bare CR/LF)
+    UnexpectedByte {
+        expected: u8,
+        found: u8,
+    },
 
     // Framing
     ConflictingContentLength,
@@ -42,16 +56,60 @@ pub enum ParseErrorKind {
     ChunkExtensionsInvalid,
 
     // Limits
-    TooLarge { what: LimitKind, limit: usize, actual: usize },
+    TooLarge {
+        what: LimitKind,
+        limit: usize,
+        actual: usize,
+    },
 
     // Flow / I/O
-    IncompleteMessage,         // ran out before CRLF or before body finished
+    IncompleteMessage, // ran out before CRLF or before body finished
     Timeout,
     Io(std::io::ErrorKind),
 
     // Version/feature policy
-    VersionNotSupported,       // e.g., HTTP/2 preface on H1
-    UnsupportedFeature,        // generic policy gate
+    VersionNotSupported, // e.g., HTTP/2 preface on H1
+    UnsupportedFeature,  // generic policy gate
+}
+
+impl Display for ParseErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidMethod => f.write_str("invalid method"),
+            Self::InvalidTarget => f.write_str("invalid target"),
+            Self::InvalidVersion => f.write_str("invalid version"),
+            Self::MalformedHeaderLine => f.write_str("malformed header"),
+            Self::InvalidHeaderName => f.write_str("invalid_header_name"),
+            Self::InvalidHeaderValue => f.write_str("invalid header value"),
+            Self::UnexpectedByte { expected, found } => {
+                write!(f, "expected byte {}, got {}", expected, found)
+            }
+            Self::ConflictingContentLength => f.write_str("conflicting content length"),
+            Self::InvalidContentLength => f.write_str("invalid content length"),
+            Self::InvalidTransferEncoding => f.write_str("invalid transfer encoding"),
+            Self::ChunkSizeInvalid => f.write_str("chunk size invalid"),
+            Self::ChunkCrlfMissing => f.write_str("chunk crlf missing"),
+            Self::ChunkExtensionsInvalid => f.write_str("chunk extensions invalid"),
+            Self::TooLarge {
+                what,
+                limit,
+                actual,
+            } => {
+                // TODO: Use Display for Limit instead of Debug
+                write!(
+                    f,
+                    "limit {:?} exceeded (limit: {}, actual: {})",
+                    what, limit, actual
+                )
+            }
+
+            Self::IncompleteMessage => f.write_str("incomplete message"),
+            Self::Timeout => f.write_str("timed out"),
+            Self::Io(err) => Display::fmt(&err, f),
+            Self::VersionNotSupported => f.write_str("version not supported"),
+            Self::UnsupportedFeature => f.write_str("unsupported feature"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -67,7 +125,15 @@ pub struct HttpParseError {
 
 impl Display for HttpParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        write!(
+            f,
+            "http parse error: {} while parsing {} at offset {}",
+            self.kind, self.location, self.offset
+        )?;
+        if let Some(line) = self.line {
+            write!(f, "(line {})", line)?;
+        }
+        Ok(())
     }
 }
 

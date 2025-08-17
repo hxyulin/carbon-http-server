@@ -5,6 +5,7 @@ use uhsapi::ascii::{AsciiStr, AsciiString, InvalidAsciiError};
 
 /// An HTTP Method
 /// SPEC: Defined in RFC9112 3.1
+/// ABNF: 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Method(Repr);
 
