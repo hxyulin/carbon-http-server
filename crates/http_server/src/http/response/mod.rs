@@ -11,6 +11,7 @@ pub struct StatusCode(u16);
 
 impl StatusCode {
     pub const OK: Self = Self(200);
+    pub const BAD_REQUEST: Self = Self(400);
     pub const NOT_FOUND: Self = Self(404);
     pub const INTERNAL_SERVER_ERROR: Self = Self(500);
 

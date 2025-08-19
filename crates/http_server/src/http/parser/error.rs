@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use crate::http::response::StatusCode;
+
 #[derive(Debug, Clone, Copy)]
 pub enum Location {
     StartLine,
@@ -32,7 +34,7 @@ pub enum LimitKind {
     TrailerBytesTotal,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum ParseErrorKind {
     // Syntax/tokenization
@@ -46,6 +48,8 @@ pub enum ParseErrorKind {
         expected: u8,
         found: u8,
     },
+    MissingRequiredHeader,
+    DuplicateHeader,
 
     // Framing
     ConflictingContentLength,
@@ -84,6 +88,8 @@ impl Display for ParseErrorKind {
             Self::UnexpectedByte { expected, found } => {
                 write!(f, "expected byte {}, got {}", expected, found)
             }
+            Self::MissingRequiredHeader => f.write_str("missing required header"),
+                Self::DuplicateHeader => f.write_str("duplicate header"),
             Self::ConflictingContentLength => f.write_str("conflicting content length"),
             Self::InvalidContentLength => f.write_str("invalid content length"),
             Self::InvalidTransferEncoding => f.write_str("invalid transfer encoding"),
@@ -112,7 +118,7 @@ impl Display for ParseErrorKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct HttpParseError {
     pub kind: ParseErrorKind,
     pub location: Location,
@@ -138,3 +144,26 @@ impl Display for HttpParseError {
 }
 
 impl std::error::Error for HttpParseError {}
+
+impl HttpParseError {
+    pub fn status_code(&self) -> StatusCode {
+        match self.kind {
+            ParseErrorKind::InvalidMethod
+            | ParseErrorKind::InvalidTarget
+            | ParseErrorKind::InvalidVersion
+            | ParseErrorKind::MalformedHeaderLine
+            | ParseErrorKind::InvalidHeaderName
+            | ParseErrorKind::InvalidHeaderValue
+            | ParseErrorKind::UnexpectedByte { .. }
+            | ParseErrorKind::MissingRequiredHeader
+            | ParseErrorKind::DuplicateHeader
+            | ParseErrorKind::ConflictingContentLength
+            | ParseErrorKind::InvalidContentLength
+            | ParseErrorKind::InvalidTransferEncoding
+            | ParseErrorKind::ChunkSizeInvalid
+            | ParseErrorKind::ChunkCrlfMissing
+            | ParseErrorKind::ChunkExtensionsInvalid => StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}

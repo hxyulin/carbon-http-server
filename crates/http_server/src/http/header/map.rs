@@ -28,6 +28,10 @@ impl HeaderMap {
         self.map.entry(name).or_insert(HeaderValue::default())
     }
 
+    pub fn contains(&mut self, name: &HeaderName) -> bool {
+        self.map.contains_key(&name)
+    }
+
     pub fn get_header<T: HeaderField>(&self) -> Result<Option<T::Output>, HeaderParseError> {
         let name = HeaderName::builtin(
             Builtin::from_bytes(&Bytes::from_static(T::IDENT.as_bytes()))

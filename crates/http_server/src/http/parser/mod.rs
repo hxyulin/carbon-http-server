@@ -1,5 +1,5 @@
 use std::{
-    fmt::Debug,
+    fmt::{self, Debug},
     ops::{Index, Range, RangeInclusive},
 };
 
@@ -175,10 +175,13 @@ trait LineParse: Sized {
     type Output;
 
     fn parse(line: ReaderLine) -> HttpParseResult<Self>;
-    fn to_output(bytes: Bytes, data: Self, headers: HeaderMap, body: Body) -> Self::Output;
+    fn to_output(
+        bytes: Bytes,
+        data: Self,
+        headers: HeaderMap,
+        body: Body,
+    ) -> HttpParseResult<Self::Output>;
 }
-
-trait LineSend {}
 
 #[derive(Debug)]
 struct HeaderIx {
@@ -295,7 +298,7 @@ where
 
         // Now we can parse body
         assert_eq!(state, ParseState::Body);
-        let body = if let Some(encoding) = header_map.get_header::<TransferEncoding>().unwrap() {
+        let body = if let Some(_encoding) = header_map.get_header::<TransferEncoding>().unwrap() {
             todo!()
         } else if let Some(cl) = header_map.get_header::<ContentLength>().unwrap() {
             // TODO: Handle message larger than 4GB on 32bit maybe?
@@ -316,12 +319,12 @@ where
             Body::None
         };
 
-        Ok(M::to_output(
+        M::to_output(
             header_bytes,
             s_line.expect("status line should be parsed"),
             header_map,
             body,
-        ))
+        )
     }
 
     pub async fn parse_request(&mut self) -> HttpParseResult<Request> {
@@ -335,40 +338,82 @@ where
 
 pub struct Sender<WRITER: AsyncWriteExt + Unpin> {
     writer: WRITER,
+    buf: BytesMut,
 }
 
 impl<WRITER> Sender<WRITER>
 where
     WRITER: AsyncWriteExt + Unpin,
 {
-    pub const fn new(writer: WRITER) -> Self {
-        Self { writer }
+    pub fn new(writer: WRITER) -> Self {
+        Self {
+            writer,
+            buf: BytesMut::with_capacity(8192),
+        }
     }
 
     async fn send_headers(&mut self, headers: HeaderMap) -> std::io::Result<()> {
-        todo!()
+        use std::fmt::Write;
+        for (name, value) in headers.iter() {
+            write!(self, "{}: ", name).unwrap();
+            self.buf.extend_from_slice(&value.collect());
+            write!(self, "\r\n").unwrap();
+        }
+        write!(self, "\r\n").unwrap();
+        Ok(())
     }
 
     pub async fn send_request(&mut self, request: Request) -> std::io::Result<()> {
-        todo!()
+        use std::fmt::Write;
+        write!(
+            self,
+            "{} {} {}\r\n",
+            request.method,
+            std::str::from_utf8(&request.target).unwrap(),
+            request.version
+        )
+        .unwrap();
+        self.send_headers(request.headers).await?;
+        match request.body {
+            Body::None => {}
+            Body::Full(bytes) => self.buf.extend_from_slice(&bytes),
+        }
+        self.flush().await?;
+        Ok(())
     }
 
     pub async fn send_response(&mut self, response: Response) -> std::io::Result<()> {
         use std::fmt::Write;
-        let mut buf = BytesMut::new();
-        write!(buf, "{} {}\r\n", response.version, response.status).unwrap();
-        for (name, value) in response.headers.iter() {
-            write!(buf, "{}: ", name).unwrap();
-            buf.extend_from_slice(&value.collect());
-            write!(buf, "\r\n");
-        }
-        write!(buf, "\r\n").unwrap();
+        write!(
+            self,
+            "{} {} {}\r\n",
+            response.version,
+            response.status,
+            std::str::from_utf8(&response.message).unwrap()
+        )
+        .unwrap();
+        self.send_headers(response.headers).await?;
         match response.body {
             Body::None => {}
-            Body::Full(bytes) => buf.extend_from_slice(&bytes),
+            Body::Full(bytes) => self.buf.extend_from_slice(&bytes),
         }
-        self.writer.write_all(&buf).await?;
-        self.writer.flush().await?;
+        self.flush().await?;
+        Ok(())
+    }
+
+    async fn flush(&mut self) -> std::io::Result<()> {
+        self.writer.write_all(&self.buf).await?;
+        self.buf.clear();
+        self.writer.flush().await
+    }
+}
+
+impl<WRITER> fmt::Write for Sender<WRITER>
+where
+    WRITER: AsyncWriteExt + Unpin,
+{
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.buf.extend_from_slice(s.as_bytes());
         Ok(())
     }
 }

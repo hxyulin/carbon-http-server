@@ -1,10 +1,13 @@
 [package]
-name = "carbon-http_server"
+name = "carbon-http-server"
 version.workspace = true
 authors.workspace = true
 license.workspace = true
 rust-version.workspace = true
 edition.workspace = true
+
+[[test]]
+name = "test_suite"
 
 [dependencies]
 uhsapi.workspace = true
@@ -17,3 +20,6 @@ smallvec = "1.15.1"
 memchr = "2.7.5"
 unicase = "2.8.1"
 env_logger = "0.11.8"
+
+[dev-dependencies]
+carbon-http-test-suite.workspace = true

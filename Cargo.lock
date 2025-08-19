@@ -110,10 +110,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d71b6127be86fdcfddb610f7182ac57211d4b18a3e9c82eb2d17662f2227ad6a"
 
 [[package]]
-name = "carbon-http_server"
+name = "carbon-http-server"
 version = "0.0.1"
 dependencies = [
  "bytes",
+ "carbon-http-test-suite",
  "env_logger",
  "log",
  "memchr",
@@ -124,6 +125,10 @@ dependencies = [
  "uhsapi",
  "unicase",
 ]
+
+[[package]]
+name = "carbon-http-test-suite"
+version = "0.0.1"
 
 [[package]]
 name = "cfg-if"

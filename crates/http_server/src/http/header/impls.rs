@@ -1,6 +1,10 @@
 use std::{fmt, num::ParseIntError};
 
-use crate::http::{header::{HeaderName, Builtin}, uri::{MalformedUriError, UriHost, UriPort}};
+use crate::http::{
+    header::{Builtin, HeaderName},
+    parser::{HttpParseError, Location, ParseErrorKind},
+    uri::{MalformedUriError, UriHost, UriPort},
+};
 use bytes::Bytes;
 use uhsapi::ascii::{AsciiStr, InvalidAsciiError};
 
@@ -14,6 +18,8 @@ pub enum HeaderParseError {
     InvalidInt(#[from] ParseIntError),
     #[error(transparent)]
     InvalidAscii(#[from] InvalidAsciiError),
+    #[error(transparent)]
+    HttpParseError(#[from] HttpParseError),
 }
 
 pub trait HeaderField {
@@ -59,7 +65,12 @@ pub struct HostWithPort {
 impl HeaderValueTrait for HostWithPort {
     fn from_header_value(value: &HeaderValue) -> Result<Self, HeaderParseError> {
         if value.len() != 1 {
-            todo!("handle error")
+            return Err(HeaderParseError::HttpParseError(HttpParseError {
+                kind: ParseErrorKind::DuplicateHeader,
+                location: Location::Headers,
+                offset: 0,
+                line: None,
+            }));
         }
         let s = std::str::from_utf8(&value[0]).map_err(|_| InvalidAsciiError)?;
 
@@ -88,7 +99,12 @@ impl HeaderValueTrait for HostWithPort {
 impl HeaderValueTrait for u64 {
     fn from_header_value(value: &HeaderValue) -> Result<Self, HeaderParseError> {
         if value.len() != 1 {
-            todo!("handle error");
+            return Err(HeaderParseError::HttpParseError(HttpParseError {
+                kind: ParseErrorKind::DuplicateHeader,
+                location: Location::Headers,
+                offset: 0,
+                line: None,
+            }));
         }
         let s = std::str::from_utf8(&value[0]).map_err(|_| InvalidAsciiError)?;
         Ok(s.parse()?)
@@ -101,10 +117,36 @@ impl HeaderValueTrait for u64 {
         value.push(Bytes::from(self.to_string()));
     }
 }
+/// A Transer Encoding Type
+/// SPEC: RFC 9112 - 6.1. Transfer-Encoding
+/// HELPER: RFC 9112 - 7. Transfer Codings
+/// ABNF:
+///     Transfer-Encoding = #transfer-coding
+///     transfer-coding    = token *( OWS ";" OWS transfer-parameter )
+///     transfer-parameter = token BWS "=" BWS ( token / quoted-string )
+pub enum TransferEncodingKind {
+    /// Chunked Transfer Encoding
+    /// SPEC: RFC 9112 - 7.1 Chunked Transfer Encoding
+    /// TODO: RFC 9112 - 7.1.1 Chunk Extensions, 7.1.2 Chunked Trailer Section, 7.1.3 Decoding
+    /// Chunked
+    /// OBNF:
+    ///     chunked-body   = *chunk last-chunk trailer-section CRLF
+    ///     chunk          = chunk-size [ chunk-ext ] CRLF
+    ///                      chunk-data CRLF
+    ///     chunk-size     = 1*HEXDIG
+    ///     last-chunk     = 1*("0") [ chunk-ext ] CRLF
+    ///     chunk-data     = 1*OCTET ; a sequence of chunk-size octets
+    Chunked,
+    Compression(CompressionMethod),
+}
 
-pub enum EncodingKind {}
+pub enum CompressionMethod {
+    Compress,
+    Deflate,
+    Gzip,
+}
 
-impl HeaderValueTrait for EncodingKind {
+impl HeaderValueTrait for TransferEncodingKind {
     fn from_header_value(value: &HeaderValue) -> Result<Self, HeaderParseError> {
         todo!()
     }
@@ -173,5 +215,5 @@ impl HeaderValueTrait for ConnectionType {
 
 header_struct!(Host, b"host", HostWithPort);
 header_struct!(ContentLength, b"content-length", u64);
-header_struct!(TransferEncoding, b"transfer-encoding", EncodingKind);
+header_struct!(TransferEncoding, b"transfer-encoding", TransferEncodingKind);
 header_struct!(Connection, b"connection", ConnectionType);

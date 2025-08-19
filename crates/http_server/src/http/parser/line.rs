@@ -5,9 +5,9 @@ use uhsapi::ascii::AsciiStr;
 
 use crate::http::{
     Body, HttpVersion,
-    header::HeaderMap,
+    header::{Builtin, HeaderMap, HeaderName},
     method::Method,
-    parser::{HttpParseError, LineParse, Location, ParseErrorKind},
+    parser::{HttpParseError, HttpParseResult, LineParse, Location, ParseErrorKind},
     request::Request,
     response::Response,
 };
@@ -63,20 +63,38 @@ impl LineParse for RequestLine {
         })
     }
 
-    fn to_output(bytes: Bytes, data: Self, headers: HeaderMap, body: Body) -> Self::Output {
-        Self::Output {
+    fn to_output(
+        bytes: Bytes,
+        data: Self,
+        mut headers: HeaderMap,
+        body: Body,
+    ) -> HttpParseResult<Self::Output> {
+        if !headers.contains(&HeaderName::builtin(Builtin::Host)) {
+            return Err(HttpParseError {
+                kind: ParseErrorKind::MissingRequiredHeader,
+                location: Location::Headers,
+                offset: 0,
+                line: None,
+            });
+        }
+
+        Ok(Self::Output {
             method: Method::try_from(bytes.slice(data.method)).unwrap(),
             target: bytes.slice(data.target),
             version: data.version,
             headers,
             body,
             remote: None,
-        }
+        })
     }
 }
 
 /// The Response Line for a HTTP Message
-/// ABNF: 
+/// SPEC: RFC 9112 - 3.2. Request Target
+/// ABNF:
+///     status-line = HTTP-version SP status-code SP [ reason-phrase ]
+///     status-code    = 3DIGIT
+///     reason-phrase  = 1*( HTAB / SP / VCHAR / obs-text )
 #[derive(Debug)]
 pub struct ResponseLine {
     pub version: HttpVersion,
@@ -91,7 +109,12 @@ impl LineParse for ResponseLine {
         todo!()
     }
 
-    fn to_output(bytes: Bytes, data: Self, headers: HeaderMap, body: Body) -> Self::Output {
+    fn to_output(
+        bytes: Bytes,
+        data: Self,
+        headers: HeaderMap,
+        body: Body,
+    ) -> HttpParseResult<Self::Output> {
         todo!()
     }
 }

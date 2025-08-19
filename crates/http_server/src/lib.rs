@@ -15,8 +15,7 @@ use crate::http::{
     request::Request,
     response::{Response, ResponseBuilder, StatusCode},
 };
-use bytes::Bytes;
-use tokio::{io::AsyncWriteExt, net::{TcpSocket, TcpStream}};
+use tokio::net::{TcpSocket, TcpStream};
 
 #[derive(Debug, Clone)]
 pub struct HttpServerConfig {
@@ -158,12 +157,9 @@ impl<R: Router> HttpServerInternal<R> {
                 }
                 Err(err) => {
                     log::error!("failed to parse request: {}", err);
-                    let res = ResponseBuilder::new(
-                        HttpVersion::HTTP_1_1,
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                    )
-                    .set_header::<Connection>(ConnectionType::Close)
-                    .build();
+                    let res = ResponseBuilder::new(HttpVersion::HTTP_1_1, err.status_code())
+                        .set_header::<Connection>(ConnectionType::Close)
+                        .build();
                     sender.send_response(res).await?;
                     return Ok(());
                 }

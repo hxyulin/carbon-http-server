@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/http_server", "crates/uhsapi"]
+members = ["crates/http_server", "crates/test_suite", "crates/uhsapi"]
 default-members = ["crates/http_server"]
 
 [workspace.package]
@@ -11,7 +11,8 @@ rust-version = "1.88.0"
 edition = "2024"
 
 [workspace.dependencies]
-carbon_http_server = { path = "crates/http_server", version = "0.0.1" }
+carbon-http-server = { path = "crates/http_server", version = "0.0.1" }
+carbon-http-test-suite = { path = "crates/test_suite", version = "0.0.1" }
 uhsapi = { path = "crates/uhsapi", version = "0.0.1" }
 
 log = "0.4.27"
